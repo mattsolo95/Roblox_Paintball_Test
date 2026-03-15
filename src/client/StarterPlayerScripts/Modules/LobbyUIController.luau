@@ -169,39 +169,130 @@ end
 
 function LobbyUIController:_populateVoteButtons(colorOptions: {any})
     if not voteGui then return end
-    local grid = voteGui:FindFirstChild("Panel", true) and
-        voteGui:FindFirstDescendant("ColorGrid")
-    if not grid then return end
 
-    -- Clear old buttons
-    for _, child in ipairs(grid:GetChildren()) do
-        if child:IsA("TextButton") then child:Destroy() end
-    end
+    -- Clear any previously built vote UI and rebuild fresh
+    voteGui:ClearAllChildren()
+
+    local panel                 = Instance.new("Frame")
+    panel.Name                  = "VotePanel"
+    panel.Size                  = UDim2.new(0, 520, 0, 440)
+    panel.Position              = UDim2.new(0.5, 0, 0.5, 0)
+    panel.AnchorPoint           = Vector2.new(0.5, 0.5)
+    panel.BackgroundColor3      = Color3.new(0.05, 0.05, 0.1)
+    panel.BackgroundTransparency = 0.12
+    panel.BorderSizePixel       = 0
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+    panel.Parent                = voteGui
+
+    local title                 = Instance.new("TextLabel")
+    title.Size                  = UDim2.new(1, 0, 0, 50)
+    title.Position              = UDim2.new(0, 0, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text                  = "Vote for Team Color"
+    title.Font                  = Enum.Font.GothamBold
+    title.TextSize              = 26
+    title.TextColor3            = Color3.new(1, 1, 1)
+    title.Parent                = panel
+
+    local grid                  = Instance.new("Frame")
+    grid.Name                   = "ColorGrid"
+    grid.Size                   = UDim2.new(1, -30, 1, -70)
+    grid.Position               = UDim2.new(0, 15, 0, 65)
+    grid.BackgroundTransparency = 1
+    grid.Parent                 = panel
+
+    local layout                = Instance.new("UIGridLayout")
+    layout.CellSize             = UDim2.new(0, 110, 0, 85)
+    layout.CellPadding          = UDim2.new(0, 10, 0, 10)
+    layout.HorizontalAlignment  = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment    = Enum.VerticalAlignment.Top
+    layout.Parent               = grid
 
     for i, opt in ipairs(colorOptions) do
         local btn               = Instance.new("TextButton")
-        btn.Size                = UDim2.new(0, 100, 0, 80)
+        btn.Size                = UDim2.new(0, 110, 0, 85)
         btn.BackgroundColor3    = opt.rgb or Color3.new(0.5, 0.5, 0.5)
         btn.Text                = opt.name or ("Color " .. i)
         btn.TextColor3          = Color3.new(1, 1, 1)
         btn.Font                = Enum.Font.GothamBold
-        btn.TextSize            = 14
+        btn.TextSize            = 15
         btn.BorderSizePixel     = 0
+        btn.BackgroundTransparency = 0.1
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
         btn.Parent              = grid
 
         local idx = i
         btn.Activated:Connect(function()
             Remotes.FireServer("CastTeamVote", idx)
-            -- Highlight selection
             for _, other in ipairs(grid:GetChildren()) do
                 if other:IsA("TextButton") then
-                    other.BackgroundTransparency = 0.4
+                    other.BackgroundTransparency = 0.5
+                    other.Text = other.Text:gsub(" ✓", "")
                 end
             end
             btn.BackgroundTransparency = 0
+            btn.Text = btn.Text .. " ✓"
         end)
     end
+end
+
+-- Map vote UI (Snow vs Grass)
+function LobbyUIController:_showMapVote(options: {string})
+    local gui               = Instance.new("ScreenGui")
+    gui.Name                = "MapVoteUI"
+    gui.ResetOnSpawn        = false
+    gui.Parent              = playerGui
+
+    local panel             = Instance.new("Frame")
+    panel.Size              = UDim2.new(0, 420, 0, 180)
+    panel.Position          = UDim2.new(0.5, 0, 0.25, 0)
+    panel.AnchorPoint       = Vector2.new(0.5, 0)
+    panel.BackgroundColor3  = Color3.new(0, 0, 0)
+    panel.BackgroundTransparency = 0.2
+    panel.BorderSizePixel   = 0
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+    panel.Parent            = gui
+
+    local title             = Instance.new("TextLabel")
+    title.Size              = UDim2.new(1, 0, 0, 44)
+    title.Position          = UDim2.new(0, 0, 0, 8)
+    title.BackgroundTransparency = 1
+    title.Text              = "Vote: Which Map?"
+    title.Font              = Enum.Font.GothamBold
+    title.TextSize          = 24
+    title.TextColor3        = Color3.new(1, 1, 1)
+    title.Parent            = panel
+
+    local mapNames  = { snow = "❄  Winter Kingdom", grass = "🌿  Rolling Hills" }
+    local mapColors = { snow = Color3.fromRGB(180, 210, 240), grass = Color3.fromRGB(80, 160, 60) }
+    local xPos = 0.05
+    for _, opt in ipairs(options) do
+        local btn               = Instance.new("TextButton")
+        btn.Size                = UDim2.new(0.42, 0, 0, 60)
+        btn.Position            = UDim2.new(xPos, 0, 0, 60)
+        btn.BackgroundColor3    = mapColors[opt] or Color3.new(0.5, 0.5, 0.5)
+        btn.BackgroundTransparency = 0.15
+        btn.Text                = mapNames[opt] or opt
+        btn.TextColor3          = Color3.new(1, 1, 1)
+        btn.Font                = Enum.Font.GothamBold
+        btn.TextSize            = 18
+        btn.BorderSizePixel     = 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        btn.Parent              = panel
+        xPos += 0.5
+
+        local choice = opt
+        btn.Activated:Connect(function()
+            Remotes.FireServer("CastMapVote", choice)
+            btn.BackgroundTransparency = 0
+            btn.Text = btn.Text .. " ✓"
+        end)
+    end
+
+    -- Auto-dismiss after 14 seconds (slightly longer than server timer)
+    task.delay(14, function()
+        if gui and gui.Parent then gui:Destroy() end
+    end)
 end
 
 -- =====================================================
@@ -231,6 +322,10 @@ function LobbyUIController:Initialize()
     buildLobbyGui()
     buildVoteGui()
     buildLoadingGui()
+
+    Remotes.OnClient("MapVote", function(options: {string})
+        self:_showMapVote(options)
+    end)
 
     Remotes.OnClient("StartTeamVote", function(colorOptions: {any})
         self:_populateVoteButtons(colorOptions)

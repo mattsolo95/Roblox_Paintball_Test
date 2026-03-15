@@ -73,25 +73,43 @@ end
 -- Moves players to lobby and waits until 2+ are present and lobbyTime elapses.
 local function lobbyPhase(waitSeconds: number): ()
     setState(State.LOBBY)
-    LobbyManager:MovePlayersToLobby()
+    task.spawn(function() LobbyManager:MovePlayersToLobby() end)  -- non-blocking
 
     local elapsed = 0
+    print("[GSM] Lobby phase — waiting for", GameConfig.MIN_PLAYERS_TO_START, "player(s)...")
     while true do
         task.wait(1)
         if #Players:GetPlayers() < GameConfig.MIN_PLAYERS_TO_START then
-            elapsed = 0   -- reset timer while not enough players
+            elapsed = 0
         else
             elapsed += 1
             if elapsed >= waitSeconds then break end
         end
     end
+    print("[GSM] Lobby phase done.")
 end
 
 local function countdownPhase(): ()
     setState(State.COUNTDOWN)
-    LobbyManager:MovePlayersToRooftop()
+    print("[GSM] Countdown starting...")
+    task.spawn(function() LobbyManager:MovePlayersToRooftop() end)  -- non-blocking
     Remotes.FireAll("ShowCountdown", GameConfig.PREGAME_COUNTDOWN)
     runTimer(GameConfig.PREGAME_COUNTDOWN)
+end
+
+-- Map vote: players choose Snow or Grass
+local function mapVotePhase(): ()
+    local votes = { snow = 0, grass = 0 }
+    Remotes.FireAll("MapVote", {"snow", "grass"})
+    local conn = Remotes.OnServer("CastMapVote", function(_player: Player, choice: string)
+        if choice == "snow" or choice == "grass" then
+            votes[choice] += 1
+        end
+    end)
+    runTimer(12)   -- 12-second map vote
+    conn:Disconnect()
+    currentMap = if votes.grass > votes.snow then "grass" else "snow"
+    print("[GSM] Map voted:", currentMap)
 end
 
 local function teamVotePhase(): ()
@@ -105,11 +123,13 @@ end
 local function mapLoadingPhase(): ()
     setState(State.MAP_LOADING)
     local playerCount = #Players:GetPlayers()
+    print("[GSM] Loading map:", currentMap, "for", playerCount, "players")
     Remotes.FireAll("ShowLoadingScreen", currentMap)
     MapManager:ClearMap()
     MapManager:GenerateMap(currentMap, playerCount)
     task.wait(GameConfig.MAP_LOAD_DELAY)
     Remotes.FireAll("HideLoadingScreen")
+    print("[GSM] Map ready.")
 end
 
 -- Returns "A", "B", or nil for a tie.
@@ -122,9 +142,25 @@ local function gamePhase(): string?
     WeaponSystem:Initialize()
     TeamManager:SpawnAllPlayers()
 
+    local scoreBroadcastTick = 0
     runTimer(GameConfig.GAME_DURATION, function(_t: number)
         local aScore, bScore = ScoringManager:GetTeamScores()
         Remotes.FireAll("ScoreUpdate", aScore, bScore, teamAWins, teamBWins)
+        -- Broadcast scoreboard data every 5 seconds
+        scoreBroadcastTick += 1
+        if scoreBroadcastTick >= 5 then
+            scoreBroadcastTick = 0
+            local sbData = ScoringManager:GetScoreboardData(TeamManager)
+            Remotes.FireAll("ScoreboardUpdate", sbData)
+        end
+        -- Notify each player of their personal points
+        for _, player in ipairs(Players:GetPlayers()) do
+            local allStats = ScoringManager:GetAllStats()
+            local s = allStats[player]
+            if s then
+                Remotes.FireClient("PersonalPointsUpdate", player, s.pointsEarned)
+            end
+        end
     end)
 
     setState(State.GAME_OVER)
@@ -182,6 +218,7 @@ local function mainLoop(): ()
         lobbyPhase(lobbyWait)
 
         countdownPhase()
+        mapVotePhase()
         teamVotePhase()
         mapLoadingPhase()
 

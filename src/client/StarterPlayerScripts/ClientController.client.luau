@@ -10,12 +10,13 @@ local Players           = game:GetService("Players")
 local Remotes = require(ReplicatedStorage:WaitForChild("Remotes"))
 
 -- Client modules (all in the Modules folder next to this script)
-local Modules               = script.Parent:WaitForChild("Modules")
-local HUDController         = require(Modules:WaitForChild("HUDController"))
-local NoManZoneClient       = require(Modules:WaitForChild("NoManZoneClient"))
-local WeaponClient          = require(Modules:WaitForChild("WeaponClient"))
-local LobbyUIController     = require(Modules:WaitForChild("LobbyUIController"))
-local CameraController      = require(Modules:WaitForChild("CameraController"))
+local Modules                   = script.Parent:WaitForChild("Modules")
+local HUDController             = require(Modules:WaitForChild("HUDController"))
+local NoManZoneClient           = require(Modules:WaitForChild("NoManZoneClient"))
+local WeaponClient              = require(Modules:WaitForChild("WeaponClient"))
+local LobbyUIController         = require(Modules:WaitForChild("LobbyUIController"))
+local CameraController          = require(Modules:WaitForChild("CameraController"))
+local ScoreboardController      = require(Modules:WaitForChild("ScoreboardController"))
 
 local localPlayer = Players.LocalPlayer
 
@@ -28,6 +29,7 @@ HUDController:Initialize()
 NoManZoneClient:Initialize()
 WeaponClient:Initialize()
 CameraController:Initialize()
+ScoreboardController:Initialize()
 
 print("[ClientController] All modules initialized for", localPlayer.Name)
 

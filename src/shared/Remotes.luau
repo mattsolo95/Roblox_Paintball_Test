@@ -59,6 +59,10 @@ local EVENTS: { string } = {
 
     -- Lobby
     "BinocularsToggle",         -- CLIENT→SERVER: ()
+    "ScoreboardUpdate",         -- (scoreboardData: table) fires every ~5s during game
+    "MapVote",                  -- (options: {string}) sent to clients
+    "CastMapVote",              -- CLIENT→SERVER: (choice: string)
+    "PersonalPointsUpdate",     -- (points: number) sent to individual player
 }
 
 local FUNCTIONS: { string } = {

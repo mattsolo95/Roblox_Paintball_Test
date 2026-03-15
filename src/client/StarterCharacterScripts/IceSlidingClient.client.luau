@@ -29,9 +29,9 @@ local function makeSound(id: string, parent: Instance): Sound
 end
 
 -- Sound IDs (Roblox catalog — replace with custom sounds later)
-local snowStepSound = makeSound("rbxassetid://5798865159", hrp)  -- crunchy snow
-local grassStepSound = makeSound("rbxassetid://6333702987", hrp) -- grass footstep
-local iceSlideSound  = makeSound("rbxassetid://4612395429", hrp) -- ice slide hiss
+local snowStepSound  = makeSound("", hrp)  -- TODO: add snow footstep sound ID
+local grassStepSound = makeSound("", hrp)  -- TODO: add grass footstep sound ID
+local iceSlideSound  = makeSound("", hrp)  -- TODO: add ice slide sound ID
 
 iceSlideSound.Looped = true
 

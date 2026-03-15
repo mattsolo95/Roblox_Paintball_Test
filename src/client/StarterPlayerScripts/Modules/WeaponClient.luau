@@ -1,143 +1,155 @@
 --!strict
 -- WeaponClient.luau (Client Module)
--- Handles weapon input, muzzle flash, hit markers, and reload feedback.
--- Sends fire requests to the server (server does actual hit detection).
+-- Detects when the player equips a Tool, sends fire requests to the server,
+-- plays shoot sound, shows hit markers, and renders paint splat effects.
 
 local Players           = game:GetService("Players")
-local UserInputService  = game:GetService("UserInputService")
-local RunService        = game:GetService("RunService")
 local TweenService      = game:GetService("TweenService")
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local GameConfig        = require(ReplicatedStorage:WaitForChild("GameConfig"))
-local Remotes           = require(ReplicatedStorage:WaitForChild("Remotes"))
+
+local GameConfig    = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local Remotes       = require(ReplicatedStorage:WaitForChild("Remotes"))
 
 local WeaponClient  = {}
 local localPlayer   = Players.LocalPlayer
 local camera        = workspace.CurrentCamera
 
--- Current weapon state
-local currentWeapon     = GameConfig.DEFAULT_WEAPON
-local currentAmmo       = 0
-local maxAmmo           = 0
-local isReloading       = false
-local lastFireTime      = 0
+local currentTool:      Tool?               = nil
+local currentWeapon:    string              = GameConfig.DEFAULT_WEAPON
+local lastFireTime:     number              = 0
 
--- UI references
-local hitMarker: Frame?         = nil
-local crosshair: Frame?         = nil
-local screenGui: ScreenGui?     = nil
+-- UI elements
+local hitMarker:    Frame?      = nil
+local crosshairParts: {Frame}   = {}
+local screenGui:    ScreenGui?  = nil
 
 -- =====================================================
 -- INITIALIZE
 -- =====================================================
 
 function WeaponClient:Initialize()
-    local weaponCfg = GameConfig.WEAPONS[currentWeapon]
-    currentAmmo     = weaponCfg.ammo
-    maxAmmo         = weaponCfg.ammo
-
-    self:_buildCrosshairUI()
-    self:_hookInput()
+    self:_buildUI()
     self:_hookRemotes()
+    self:_watchCharacter()
 end
 
 -- =====================================================
--- UI
+-- UI — CROSSHAIR + HIT MARKER
 -- =====================================================
 
-function WeaponClient:_buildCrosshairUI()
+function WeaponClient:_buildUI()
     screenGui               = Instance.new("ScreenGui")
     screenGui.Name          = "WeaponUI"
     screenGui.ResetOnSpawn  = false
     screenGui.Parent        = localPlayer:WaitForChild("PlayerGui")
 
-    -- Crosshair (4 lines)
-    local cx = Instance.new("Frame")
-    cx.Name                 = "Crosshair"
-    cx.Size                 = UDim2.new(0, 2, 0, 16)
-    cx.AnchorPoint          = Vector2.new(0.5, 0.5)
-    cx.Position             = UDim2.new(0.5, 0, 0.5, -10)
-    cx.BackgroundColor3     = Color3.new(1, 1, 1)
-    cx.BorderSizePixel      = 0
-    cx.Parent               = screenGui
-    crosshair               = cx
+    -- Crosshair (4 lines: top, bottom, left, right)
+    local function makeLine(size: UDim2, pos: UDim2): Frame
+        local f                 = Instance.new("Frame")
+        f.Size                  = size
+        f.Position              = pos
+        f.AnchorPoint           = Vector2.new(0.5, 0.5)
+        f.BackgroundColor3      = Color3.new(1, 1, 1)
+        f.BackgroundTransparency = 0.1
+        f.BorderSizePixel       = 0
+        f.Visible               = false     -- hidden until tool equipped
+        f.Parent                = screenGui
+        table.insert(crosshairParts, f)
+        return f
+    end
 
-    local cx2               = cx:Clone()
-    cx2.Position            = UDim2.new(0.5, 0, 0.5, 10)
-    cx2.Parent              = screenGui
+    makeLine(UDim2.new(0, 2, 0, 12), UDim2.new(0.5, 0, 0.5, -10))  -- top
+    makeLine(UDim2.new(0, 2, 0, 12), UDim2.new(0.5, 0, 0.5,  10))  -- bottom
+    makeLine(UDim2.new(0, 12, 0, 2), UDim2.new(0.5,-10, 0.5,   0)) -- left
+    makeLine(UDim2.new(0, 12, 0, 2), UDim2.new(0.5, 10, 0.5,   0)) -- right
 
-    local cx3               = cx:Clone()
-    cx3.Size                = UDim2.new(0, 16, 0, 2)
-    cx3.Position            = UDim2.new(0.5, -10, 0.5, 0)
-    cx3.Parent              = screenGui
-
-    local cx4               = cx:Clone()
-    cx4.Size                = UDim2.new(0, 16, 0, 2)
-    cx4.Position            = UDim2.new(0.5, 10, 0.5, 0)
-    cx4.Parent              = screenGui
-
-    -- Hit marker (flash on hit confirmation)
+    -- Hit marker (X shape, flashes on hit)
     local hm                = Instance.new("Frame")
     hm.Name                 = "HitMarker"
-    hm.Size                 = UDim2.new(0, 24, 0, 24)
+    hm.Size                 = UDim2.new(0, 28, 0, 28)
     hm.AnchorPoint          = Vector2.new(0.5, 0.5)
     hm.Position             = UDim2.new(0.5, 0, 0.5, 0)
     hm.BackgroundTransparency = 1
-    hm.BorderSizePixel      = 0
     hm.Visible              = false
     hm.Parent               = screenGui
 
-    -- X lines for hit marker
     local function makeHMLine(rot: number)
-        local line          = Instance.new("Frame")
-        line.Size           = UDim2.new(0, 20, 0, 2)
-        line.AnchorPoint    = Vector2.new(0.5, 0.5)
-        line.Position       = UDim2.new(0.5, 0, 0.5, 0)
-        line.Rotation       = rot
-        line.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-        line.BorderSizePixel = 0
-        line.Parent         = hm
+        local l             = Instance.new("Frame")
+        l.Size              = UDim2.new(0, 22, 0, 2)
+        l.AnchorPoint       = Vector2.new(0.5, 0.5)
+        l.Position          = UDim2.new(0.5, 0, 0.5, 0)
+        l.Rotation          = rot
+        l.BackgroundColor3  = Color3.fromRGB(255, 50, 50)
+        l.BorderSizePixel   = 0
+        l.Parent            = hm
     end
     makeHMLine(45)
     makeHMLine(-45)
-    hitMarker               = hm
+    hitMarker = hm
+end
+
+function WeaponClient:_setCrosshairVisible(visible: boolean)
+    for _, line in ipairs(crosshairParts) do
+        line.Visible = visible
+    end
 end
 
 -- =====================================================
--- INPUT
+-- WATCH CHARACTER FOR TOOL EQUIP/UNEQUIP
 -- =====================================================
 
-function WeaponClient:_hookInput()
-    UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
-        if gameProcessed then return end
-
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            self:_tryFire()
-        elseif input.KeyCode == Enum.KeyCode.R then
-            self:_reload()
-        end
-    end)
-
-    -- Auto-fire while holding mouse (for full-auto feel on standard gun)
-    RunService.Heartbeat:Connect(function()
-        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-            local weaponCfg = GameConfig.WEAPONS[currentWeapon]
-            if weaponCfg and not weaponCfg.isHitscan then
-                -- Only auto-fire for non-hitscan (sniper is always semi)
-                self:_tryFire()
+function WeaponClient:_watchCharacter()
+    local function connectCharacter(char: Model)
+        -- Catch tools equipped after character spawns
+        char.ChildAdded:Connect(function(child: Instance)
+            if child:IsA("Tool") then
+                self:_onToolEquipped(child :: Tool)
+            end
+        end)
+        char.ChildRemoved:Connect(function(child: Instance)
+            if child:IsA("Tool") and child == currentTool then
+                self:_onToolUnequipped()
+            end
+        end)
+        -- If a tool is already in hand on spawn
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("Tool") then
+                self:_onToolEquipped(child :: Tool)
             end
         end
+    end
+
+    if localPlayer.Character then
+        connectCharacter(localPlayer.Character)
+    end
+    localPlayer.CharacterAdded:Connect(connectCharacter)
+end
+
+-- =====================================================
+-- TOOL EQUIP / UNEQUIP
+-- =====================================================
+
+function WeaponClient:_onToolEquipped(tool: Tool)
+    currentTool     = tool
+    currentWeapon   = tool.Name
+    self:_setCrosshairVisible(true)
+
+    -- Connect firing to Tool.Activated (fires on left-click while equipped)
+    tool.Activated:Connect(function()
+        self:_tryFire()
     end)
 end
 
-function WeaponClient:_tryFire()
-    if isReloading then return end
-    if currentAmmo <= 0 then
-        self:_reload()
-        return
-    end
+function WeaponClient:_onToolUnequipped()
+    currentTool = nil
+    self:_setCrosshairVisible(false)
+end
 
+-- =====================================================
+-- FIRE
+-- =====================================================
+
+function WeaponClient:_tryFire()
     local weaponCfg = GameConfig.WEAPONS[currentWeapon]
     if not weaponCfg then return end
 
@@ -145,11 +157,11 @@ function WeaponClient:_tryFire()
     if now - lastFireTime < weaponCfg.fireRate then return end
     lastFireTime = now
 
-    -- Build fire direction from camera
     local char  = localPlayer.Character
     local hrp   = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
     if not hrp then return end
 
+    -- Direction from center of screen
     local unitRay   = camera:ScreenPointToRay(
         camera.ViewportSize.X / 2,
         camera.ViewportSize.Y / 2
@@ -157,151 +169,108 @@ function WeaponClient:_tryFire()
     local origin    = hrp.Position + Vector3.new(0, 1.5, 0)
     local direction = unitRay.Direction
 
-    -- Apply client-side spread for visual feedback
-    local spread = weaponCfg.spread
-    if spread > 0 then
-        direction = (direction + Vector3.new(
-            (math.random() - 0.5) * spread,
-            (math.random() - 0.5) * spread,
-            (math.random() - 0.5) * spread
-        )).Unit
-    end
-
     Remotes.FireServer("WeaponFired", currentWeapon, origin, direction)
 
-    currentAmmo -= 1
-    Remotes.FireClient and nil  -- ammo update will come from server
-
-    -- Local ammo display feedback (optimistic)
-    Remotes.FireServer and nil
-    -- Directly update HUD client-side for responsiveness
-    local ammoUpdateRemote = game:GetService("ReplicatedStorage")
-        :FindFirstChild("GameRemotes")
-    if ammoUpdateRemote then
-        -- We'll rely on AmmoUpdate events from server, but also visually expand crosshair
+    -- Play shoot sound on the tool handle
+    if currentTool then
+        local handle = currentTool:FindFirstChild("Handle") :: BasePart?
+        if handle then
+            local sound = handle:FindFirstChild("ShootSound") :: Sound?
+            if sound and sound.SoundId ~= "" then sound:Play() end
+        end
     end
 
-    -- Crosshair spread feedback
-    if crosshair then
-        TweenService:Create(crosshair, TweenInfo.new(0.05),
-            { Position = UDim2.new(0.5, 0, 0.5, -16) }):Play()
+    -- Crosshair bloom (spread out slightly on fire)
+    local offsets = {
+        UDim2.new(0.5, 0, 0.5, -16),
+        UDim2.new(0.5, 0, 0.5,  16),
+        UDim2.new(0.5,-16, 0.5,   0),
+        UDim2.new(0.5, 16, 0.5,   0),
+    }
+    local restPositions = {
+        UDim2.new(0.5, 0, 0.5, -10),
+        UDim2.new(0.5, 0, 0.5,  10),
+        UDim2.new(0.5,-10, 0.5,   0),
+        UDim2.new(0.5, 10, 0.5,   0),
+    }
+    for i, line in ipairs(crosshairParts) do
+        TweenService:Create(line, TweenInfo.new(0.05), { Position = offsets[i] }):Play()
         task.delay(0.12, function()
-            if crosshair then
-                TweenService:Create(crosshair, TweenInfo.new(0.15),
-                    { Position = UDim2.new(0.5, 0, 0.5, -10) }):Play()
-            end
+            TweenService:Create(line, TweenInfo.new(0.15), { Position = restPositions[i] }):Play()
         end)
     end
-
-    if currentAmmo <= 0 then
-        task.delay(0.1, function() self:_reload() end)
-    end
-end
-
-function WeaponClient:_reload()
-    if isReloading or currentAmmo == maxAmmo then return end
-    isReloading = true
-
-    -- Visual feedback: will show "Reloading..." via AmmoUpdate from server
-    local weaponCfg = GameConfig.WEAPONS[currentWeapon]
-    if not weaponCfg then isReloading = false; return end
-
-    task.delay(weaponCfg.reloadTime, function()
-        currentAmmo = maxAmmo
-        isReloading = false
-    end)
 end
 
 -- =====================================================
--- SERVER REMOTES
+-- SERVER EVENT HOOKS
 -- =====================================================
 
 function WeaponClient:_hookRemotes()
-    Remotes.OnClient("AmmoUpdate", function(current: number, max: number, _reloading: boolean)
-        currentAmmo = current
-        maxAmmo     = max
-        -- HUDController listens to this same event for display
-    end)
-
-    -- Show hit marker when server confirms our shot hit someone
-    Remotes.OnClient("TakedownEvent", function(_attacker: string, _victim: string, _points: number, _inNMZ: boolean)
-        -- Only flash if we're the attacker (checked by name)
-        if _attacker == localPlayer.Name then
-            self:_flashHitMarker(true)
+    -- Flash hit marker when we get a takedown
+    Remotes.OnClient("TakedownEvent", function(attackerName: string, _v, _p, _z)
+        if attackerName == localPlayer.Name then
+            self:_flashHitMarker(Color3.fromRGB(255, 210, 50))  -- gold for kill
         end
     end)
 
+    -- Flash red on a damage hit (from HitEffect, check if near a player we shot)
     Remotes.OnClient("HitEffect", function(pos: Vector3, normal: Vector3, color: Color3)
-        self:_spawnHitEffect(pos, normal, color)
+        self:_spawnPaintSplat(pos, normal, color)
     end)
 end
 
 -- =====================================================
--- HIT MARKER FLASH
+-- HIT MARKER
 -- =====================================================
 
-function WeaponClient:_flashHitMarker(isElimination: boolean)
+function WeaponClient:_flashHitMarker(color: Color3)
     if not hitMarker then return end
-    hitMarker.Visible = true
-
-    local flashColor = if isElimination
-        then Color3.fromRGB(255, 200, 50)   -- gold for elimination
-        else Color3.fromRGB(255, 50, 50)    -- red for hit
-
     for _, line in ipairs(hitMarker:GetChildren()) do
-        if line:IsA("Frame") then
-            line.BackgroundColor3 = flashColor
-        end
+        if line:IsA("Frame") then line.BackgroundColor3 = color end
     end
-
-    task.delay(0.18, function()
+    hitMarker.Visible = true
+    task.delay(0.2, function()
         if hitMarker then hitMarker.Visible = false end
     end)
 end
 
 -- =====================================================
--- PAINT SPLAT EFFECT (client-side visual)
+-- PAINT SPLAT (client-side visual)
 -- =====================================================
 
-function WeaponClient:_spawnHitEffect(pos: Vector3, normal: Vector3, color: Color3)
-    -- Paint splat decal on the surface
-    local splatPart             = Instance.new("Part")
-    splatPart.Size              = Vector3.new(0.1, 0.1, 0.1)
-    splatPart.Anchored          = true
-    splatPart.CanCollide        = false
-    splatPart.Transparency      = 1
-    splatPart.CFrame            = CFrame.new(pos, pos + normal)
-    splatPart.Parent            = workspace
+function WeaponClient:_spawnPaintSplat(pos: Vector3, normal: Vector3, color: Color3)
+    local part              = Instance.new("Part")
+    part.Size               = Vector3.new(0.1, 0.1, 0.1)
+    part.Anchored           = true
+    part.CanCollide         = false
+    part.Transparency       = 1
+    part.CFrame             = CFrame.new(pos, pos + normal)
+    part.Parent             = workspace
 
-    local decal                 = Instance.new("Decal")
-    decal.Texture               = "rbxassetid://7546611"   -- paint blob texture
-    decal.Color3                = color
-    decal.Face                  = Enum.NormalId.Front
-    decal.Parent                = splatPart
+    local decal             = Instance.new("Decal")
+    decal.Texture           = "rbxassetid://7546611"
+    decal.Color3            = color
+    decal.Face              = Enum.NormalId.Front
+    decal.Parent            = part
 
-    -- Particle burst
-    local emitter               = Instance.new("ParticleEmitter")
-    emitter.Color               = ColorSequence.new(color)
-    emitter.LightEmission       = 0.4
-    emitter.Size                = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0.3),
+    local emitter           = Instance.new("ParticleEmitter")
+    emitter.Color           = ColorSequence.new(color)
+    emitter.LightEmission   = 0.5
+    emitter.Size            = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.35),
         NumberSequenceKeypoint.new(1, 0),
     })
-    emitter.Lifetime            = NumberRange.new(0.4, 0.8)
-    emitter.Speed               = NumberRange.new(8, 20)
-    emitter.SpreadAngle         = Vector2.new(45, 45)
-    emitter.RotSpeed            = NumberRange.new(-180, 180)
-    emitter.Rate                = 0
-    emitter.Parent              = splatPart
-    emitter:Emit(12)
+    emitter.Lifetime        = NumberRange.new(0.3, 0.7)
+    emitter.Speed           = NumberRange.new(6, 18)
+    emitter.SpreadAngle     = Vector2.new(50, 50)
+    emitter.Rate            = 0
+    emitter.Parent          = part
+    emitter:Emit(10)
 
-    -- Fade decal over 15 seconds, then clean up
     task.delay(15, function()
-        if splatPart and splatPart.Parent then
+        if part and part.Parent then
             TweenService:Create(decal, TweenInfo.new(2), { Transparency = 1 }):Play()
-            task.delay(2, function()
-                if splatPart then splatPart:Destroy() end
-            end)
+            task.delay(2, function() if part then part:Destroy() end end)
         end
     end)
 end

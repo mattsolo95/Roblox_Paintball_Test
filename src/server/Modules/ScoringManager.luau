@@ -183,6 +183,41 @@ function ScoringManager:GetAllStats(): {[Player]: SkillCalculator.PlayerStats}
     return result
 end
 
+-- Returns scoreboard data for all players, grouped by team
+function ScoringManager:GetScoreboardData(teamManager: any): {}
+    local function getTeamRows(teamId: string): {{}}
+        local rows = {}
+        for _, player in ipairs(teamManager:GetTeamPlayers(teamId)) do
+            local s = stats[player]
+            table.insert(rows, {
+                name        = player.Name,
+                points      = s and s.pointsEarned or 0,
+                takedowns   = s and s.takedowns or 0,
+                deaths      = s and s.deaths or 0,
+                assists     = s and s.assists or 0,
+                flags       = s and s.flagCaptures or 0,
+            })
+        end
+        table.sort(rows, function(a, b) return a.points > b.points end)
+        return rows
+    end
+
+    local nameA, colorA = teamManager:GetTeamInfo("A")
+    local nameB, colorB = teamManager:GetTeamInfo("B")
+    local aScore, bScore = self:GetTeamScores()
+
+    return {
+        teamAName       = nameA,
+        teamAScore      = aScore,
+        teamAColor      = { R = colorA.R, G = colorA.G, B = colorA.B },
+        teamAPlayers    = getTeamRows("A"),
+        teamBName       = nameB,
+        teamBScore      = bScore,
+        teamBColor      = { R = colorB.R, G = colorB.G, B = colorB.B },
+        teamBPlayers    = getTeamRows("B"),
+    }
+end
+
 -- Returns top-3 players on winning team for the podium
 function ScoringManager:GetPodiumData(winnerTeamId: string, teamManager: any): {{}}
     local allStats  = self:GetAllStats()

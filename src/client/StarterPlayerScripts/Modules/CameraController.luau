@@ -90,21 +90,23 @@ function CameraController:_updateLobbyCamera(dt: number)
     local lobby = workspace:FindFirstChild("Lobby")
     if not lobby then return end
 
-    -- Orbit slowly around a fixed focal point (ocean view)
-    _panAngle += dt * 0.08   -- very slow rotation
+    -- Lobby is built at Z=2000; rooftop is at Y=54
+    -- Slowly pan camera looking out over the ocean (positive Z direction)
+    _panAngle += dt * 0.06
 
-    local focalPoint    = Vector3.new(0, 2060, 2400)  -- ocean ahead of lobby
-    local radius        = 90
-    local height        = 2118   -- rooftop level
+    local lobbyZ    = 2000
+    local rooftopY  = 56
+    local radius    = 50
 
     local camPos = Vector3.new(
-        focalPoint.X + radius * math.cos(_panAngle),
-        height,
-        focalPoint.Z - 200 + radius * math.sin(_panAngle) * 0.3
+        radius * math.cos(_panAngle),
+        rooftopY,
+        lobbyZ - 25 + radius * math.sin(_panAngle) * 0.4
     )
+    local lookAt = Vector3.new(0, rooftopY - 5, lobbyZ + 300)  -- look out at the ocean
 
-    camera.CFrame = CFrame.new(camPos, focalPoint)
-    camera.FieldOfView = 55
+    camera.CFrame       = CFrame.new(camPos, lookAt)
+    camera.FieldOfView  = 55
 end
 
 -- =====================================================

@@ -30,7 +30,7 @@ local GameConfig = {
     -- ROUND STRUCTURE
     -- =====================================================
     GAMES_TO_WIN_ROUND      = 3,     -- first team to 3 game-wins takes the round
-    MIN_PLAYERS_TO_START    = 2,
+    MIN_PLAYERS_TO_START    = 1,    -- set to 2 for live game; 1 for solo testing
 
     -- =====================================================
     -- PLAYER / CHARACTER

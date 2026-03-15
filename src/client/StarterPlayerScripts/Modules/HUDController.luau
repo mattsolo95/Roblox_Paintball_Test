@@ -215,6 +215,41 @@ function HUDController:_hookRemotes()
         winsB_Label.Text  = "Wins: " .. bWins
     end)
 
+    -- Update score label colors to match voted team colors
+    Remotes.OnClient("TeamVoteResult", function(colorA: any, colorB: any)
+        if scoreA_Label and colorA and colorA.rgb then
+            scoreA_Label.TextColor3 = colorA.rgb
+            winsA_Label.TextColor3  = colorA.rgb
+        end
+        if scoreB_Label and colorB and colorB.rgb then
+            scoreB_Label.TextColor3 = colorB.rgb
+            winsB_Label.TextColor3  = colorB.rgb
+        end
+    end)
+
+    -- Personal points
+    Remotes.OnClient("PersonalPointsUpdate", function(points: number)
+        -- Find or create personal points label near timer
+        local gui   = playerGui:FindFirstChild("HUD")
+        if not gui then return end
+        local lbl   = gui:FindFirstChild("PersonalPts") :: TextLabel?
+        if not lbl then
+            lbl             = Instance.new("TextLabel")
+            lbl.Name        = "PersonalPts"
+            lbl.Size        = UDim2.new(0, 160, 0, 22)
+            lbl.Position    = UDim2.new(0.5, 0, 0, 62)
+            lbl.AnchorPoint = Vector2.new(0.5, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Font        = Enum.Font.Gotham
+            lbl.TextSize    = 15
+            lbl.TextColor3  = Color3.fromRGB(220, 220, 100)
+            lbl.TextStrokeTransparency = 0.4
+            lbl.TextStrokeColor3 = Color3.new(0, 0, 0)
+            lbl.Parent      = gui
+        end
+        lbl.Text = "You: " .. points .. " pts"
+    end)
+
     Remotes.OnClient("AmmoUpdate", function(current: number, max: number, reloading: boolean)
         ammoLabel.Text = if reloading
             then "Reloading..."

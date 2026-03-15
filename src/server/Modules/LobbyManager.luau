@@ -147,7 +147,7 @@ local function buildLobby(root: Folder)
     -- Lobby ambient sound (ocean + seagulls feel — use SoundId from Roblox catalog)
     local ambientSound          = Instance.new("Sound")
     ambientSound.Name           = "LobbyAmbience"
-    ambientSound.SoundId        = "rbxassetid://1839919157"   -- ocean waves
+    ambientSound.SoundId        = ""   -- TODO: replace with a valid ocean ambient sound ID
     ambientSound.Volume         = 0.4
     ambientSound.Looped         = true
     ambientSound.RollOffMaxDistance = 200
